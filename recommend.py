@@ -11,7 +11,7 @@ from flask import Flask, make_response, request, current_app
 import os 
 import csv
 import json
-
+import collections
 
 # Your API definition
 
@@ -43,11 +43,17 @@ def predict():
 		from sklearn import preprocessing
 		json_ = request.json
 		if json_["customer"]== "Gus":
-			df = pd.read_csv(r"data1.csv")
+			df = pd.read_pickle(r"data1.pkl")
 		elif json_["customer"]== "Leo":
-			df = pd.read_csv(r"data2.csv")
+			df = pd.read_pickle(r"data2.pkl")
 		else:
-			df = pd.read_csv(r"data3.csv")		
+			df = pd.read_pickle(r"data3.pkl")		
+
+		
+		df['val2'] = df.groupby('Customer')['Product'].apply(lambda x: pd.Series(np.roll(x, -1))).values
+		df= df.groupby(["Product", "val2"]).size().reset_index(name="Freq")
+		"""
+
 
 		le = preprocessing.LabelEncoder()
 		le.fit(df['Product'])
@@ -55,6 +61,7 @@ def predict():
 		df["Product"]= pd.Series(list(le.transform(df["Product"]))) 
 		dependent_variable = 'Product'
 		y = df[dependent_variable]
+
 		#Get list of unique items
 		itemList=list(set(df["Product"].tolist()))
 
@@ -81,7 +88,7 @@ def predict():
         
         		#Find score. Find the common list of users and divide it by the total users.
 				commonUsers= len(set(item1Users).intersection(set(item2Users)))
-				score=commonUsers / userCount
+				score=commonUsers / userCount*10
 
         		#Add a score for item 1, item 2
 				itemAffinity.loc[rowCount] = [itemList[ind1],itemList[ind2],score]
@@ -89,43 +96,56 @@ def predict():
 				#Add a score for item2, item 1. The same score would apply irrespective of the sequence.
 				itemAffinity.loc[rowCount] = [itemList[ind2],itemList[ind1],score]
 				rowCount +=1
+"""
+
+
         
 #Check final result
 #itemAffinity.head()
 		#json_ = request.json
 		#print(json_)
+		
 		query = pd.DataFrame([json_])
 		query = query.reindex(fill_value=0)
 		searchItem= query["product"].iloc[0]
-		if searchItem=="beer":
-			searchItem=0
-		elif searchItem=="chips":
-			searchItem=1
-		elif searchItem=="chocolate":
-			searchItem=2
-		elif searchItem=="coffee":
-			searchItem=3
-		elif searchItem=="coke":
-			searchItem=4
+		
 
-		recoList=itemAffinity[itemAffinity.item1==searchItem]\
-        [["item2","score"]]\
-        .sort_values("score", ascending=[0])
-		json_ = request.json
-		if json_["customer"]== "Gus":
-			dic = {0.0:"beer",1.0:"chips",2.0:"chocolate",3.0:"coffee",4.0:"coke"}
-		elif json_["customer"]== "Leo":
-			dic = {1.0:"beer",0.0:"chips",3.0:"chocolate",2.0:"coffee",4.0:"coke"}
-		else:
-			dic = {0.0:"beer",3.0:"chips",4.0:"chocolate",1.0:"coffee",2.0:"coke"}
 
+		recoList=df[df.Product==searchItem]\
+		[["val2","Freq"]]\
+		.sort_values("Freq", ascending=[0])
+		
+
+		#json_ = request.json
+
+		
+		#counts= df['Product'].value_counts().to_dict()
+
+		#dic = {0.0:"beer",1.0:"chips",2.0:"chocolate",3.0:"coffee",4.0:"coke"}
 	
 
-		recoList= [dic.get(n, n) for n in recoList.item2]
-        		
+		#counts = collections.OrderedDict(counts)
+
+		#recoList= [dic.get(n, n) for n in recoList.item2]
+		rec = recoList['val2'].tolist()
+		
+		for i in range(len(rec)):
+			if rec[i]== searchItem:
+				rec.remove(searchItem)
+			else:
+				pass
+					
+
+		#newlist = list()
+
+		#for key, value in counts.items():
+		#	newlist.append(key)
+			
+		for i in range(len(rec)):
+			rec[i]= rec[i].replace("\\","") 	
         				
-		#recoList= recoList.to_json()
-		return jsonify({"Recommendations": recoList})
+
+		return jsonify({"Recommendations": rec})
         #print("Recommendations for item \n", recoList)
 	except:
 		return jsonify({'trace': traceback.format_exc()})
